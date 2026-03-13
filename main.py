@@ -98,20 +98,16 @@ session = build_session()
 
 # API 원본 key를 사람이 읽기 쉬운 헤더로 변환
 DISPLAY_COLUMNS = [
-    ("stcode", "어린이집 코드"),
-    ("crname", "어린이집명"),
-    ("crtypenm", "유형"),
-    ("crspecnm", "특성"),
-    ("craddr", "주소"),
+    ("crname", "어린이집 명"),
+    ("crtypenm", "어린이집 유형"),
+    ("crspecnm", "어린이집 특성"),
+    ("craddr", "어린이집 주소"),
     ("tel_no", "전화번호"),
     ("crhome", "홈페이지"),
-    ("crrepre", "대표자"),
-    ("crcapat", "정원"),
-    ("crchcnt", "현원"),
-    ("tchertcnt", "교사수"),
-    ("ewcnt", "평가등급수"),
-    ("etnrtrynnm", "연장보육"),
-    ("stsmrycn", "행정구역"),
+    ("crcapat", "어린이집 정원"),
+    ("crchcnt", "어린이집 현원"),
+    ("tchertcnt", "총 교직원수"),
+    ("etnrtrynnm", "연장반 운영 여부"),
 ]
 
 
