@@ -1,4 +1,5 @@
 import ssl
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -86,8 +87,14 @@ retry = Retry(
     allowed_methods=frozenset(["POST"]),
 )
 
-session = requests.Session()
-session.mount("https://", TLS12HttpAdapter(max_retries=retry))
+
+def build_session() -> requests.Session:
+    sess = requests.Session()
+    sess.mount("https://", TLS12HttpAdapter(max_retries=retry))
+    return sess
+
+
+session = build_session()
 
 # API 원본 key를 사람이 읽기 쉬운 헤더로 변환
 DISPLAY_COLUMNS = [
@@ -109,11 +116,46 @@ DISPLAY_COLUMNS = [
 
 
 def fetch_page(page_num: int) -> dict:
+    global session
     page_payload = payload.copy()
     page_payload["pageNum"] = str(page_num)
-    response = session.post(url, data=page_payload, headers=headers, timeout=(10, 30))
-    response.raise_for_status()
-    return response.json()
+
+    for attempt in range(1, 6):
+        try:
+            response = session.post(url, data=page_payload, headers=headers, timeout=(10, 30))
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as exc:
+            wait_seconds = min(2**attempt, 12)
+            print(f"{page_num}페이지 시도 {attempt}/5 실패: {exc!r}")
+            if attempt == 5:
+                raise
+            # 연결이 끊겼을 때 새 세션/쿠키로 복구 시도
+            session = build_session()
+            warmup_with_retry(max_attempts=3)
+            print(f"{wait_seconds}초 대기 후 {page_num}페이지 재시도")
+            time.sleep(wait_seconds)
+
+    raise RuntimeError("unreachable")
+
+
+def warmup_with_retry(max_attempts: int = 5) -> None:
+    global session
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            warmup = session.get(home_url, headers={"User-Agent": headers["User-Agent"]}, timeout=(10, 30))
+            warmup.raise_for_status()
+            print(f"워밍업 성공: {warmup.status_code}, 쿠키 수: {len(session.cookies)}")
+            return
+        except requests.exceptions.RequestException as exc:
+            wait_seconds = min(2**attempt, 12)
+            print(f"워밍업 시도 {attempt}/{max_attempts} 실패: {exc!r}")
+            if attempt == max_attempts:
+                raise
+            session = build_session()
+            print(f"{wait_seconds}초 대기 후 워밍업 재시도")
+            time.sleep(wait_seconds)
 
 
 def collect_nursery_list(start_page: int = 1, max_pages: int = 2000) -> pd.DataFrame:
@@ -140,6 +182,8 @@ def collect_nursery_list(start_page: int = 1, max_pages: int = 2000) -> pd.DataF
 
         rows.extend(nursery_list)
         print(f"{page}페이지 수집 완료: {len(nursery_list)}건 (누적 {len(rows)}건)")
+        # 과도한 연속 호출 방지
+        time.sleep(0.2)
 
     return pd.DataFrame(rows)
 
@@ -155,9 +199,7 @@ def to_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 try:
     # 일부 엔드포인트는 세션/쿠키가 없으면 런타임 오류를 반환한다.
-    warmup = session.get(home_url, headers={"User-Agent": headers["User-Agent"]}, timeout=(10, 30))
-    warmup.raise_for_status()
-    print(f"워밍업 성공: {warmup.status_code}, 쿠키 수: {len(session.cookies)}")
+    warmup_with_retry()
 
     df = collect_nursery_list(start_page=1)
     if df.empty:
