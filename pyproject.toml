@@ -1,0 +1,16 @@
+[project]
+name = "isarang-crawling"
+version = "0.1.0"
+description = "Crawler script for childcare.go.kr data"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.32.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = false
