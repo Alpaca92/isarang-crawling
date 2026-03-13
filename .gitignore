@@ -40,3 +40,5 @@ Thumbs.db
 # Local data outputs (uncomment if needed)
 # data/
 # output/
+
+results/**/*

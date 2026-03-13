@@ -89,6 +89,24 @@ retry = Retry(
 session = requests.Session()
 session.mount("https://", TLS12HttpAdapter(max_retries=retry))
 
+# API 원본 key를 사람이 읽기 쉬운 헤더로 변환
+DISPLAY_COLUMNS = [
+    ("stcode", "어린이집 코드"),
+    ("crname", "어린이집명"),
+    ("crtypenm", "유형"),
+    ("crspecnm", "특성"),
+    ("craddr", "주소"),
+    ("tel_no", "전화번호"),
+    ("crhome", "홈페이지"),
+    ("crrepre", "대표자"),
+    ("crcapat", "정원"),
+    ("crchcnt", "현원"),
+    ("tchertcnt", "교사수"),
+    ("ewcnt", "평가등급수"),
+    ("etnrtrynnm", "연장보육"),
+    ("stsmrycn", "행정구역"),
+]
+
 
 def fetch_page(page_num: int) -> dict:
     page_payload = payload.copy()
@@ -125,6 +143,16 @@ def collect_nursery_list(start_page: int = 1, max_pages: int = 2000) -> pd.DataF
 
     return pd.DataFrame(rows)
 
+
+def to_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    available = [(src, dst) for src, dst in DISPLAY_COLUMNS if src in df.columns]
+    if not available:
+        return df.copy()
+
+    selected = df[[src for src, _ in available]].copy()
+    selected.columns = [dst for _, dst in available]
+    return selected
+
 try:
     # 일부 엔드포인트는 세션/쿠키가 없으면 런타임 오류를 반환한다.
     warmup = session.get(home_url, headers={"User-Agent": headers["User-Agent"]}, timeout=(10, 30))
@@ -135,13 +163,14 @@ try:
     if df.empty:
         print("수집된 nurseryList 데이터가 없습니다.")
     else:
-        out_dir = Path("output")
+        display_df = to_display_dataframe(df)
+        out_dir = Path("results")
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "nursery_list.csv"
-        df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        out_path = out_dir / "nursery_list_kr.csv"
+        display_df.to_csv(out_path, index=False, encoding="utf-8-sig")
 
         print("nurseryList 표 미리보기:")
-        print(df.head(10).to_string(index=False))
+        print(display_df.head(10).to_string(index=False))
         print(f"총 {len(df)}건 저장 완료: {out_path}")
 except requests.exceptions.RequestException as exc:
     print("요청 실패:", repr(exc))
