@@ -1,5 +1,7 @@
 import ssl
+from pathlib import Path
 
+import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -87,21 +89,60 @@ retry = Retry(
 session = requests.Session()
 session.mount("https://", TLS12HttpAdapter(max_retries=retry))
 
+
+def fetch_page(page_num: int) -> dict:
+    page_payload = payload.copy()
+    page_payload["pageNum"] = str(page_num)
+    response = session.post(url, data=page_payload, headers=headers, timeout=(10, 30))
+    response.raise_for_status()
+    return response.json()
+
+
+def collect_nursery_list(start_page: int = 1, max_pages: int = 2000) -> pd.DataFrame:
+    rows = []
+
+    for page in range(start_page, max_pages + 1):
+        try:
+            data = fetch_page(page)
+        except requests.exceptions.RequestException as exc:
+            print(f"{page}페이지 요청 실패로 수집 종료: {exc!r}")
+            break
+
+        result = data.get("result")
+        nursery_list = data.get("nurseryList") or []
+
+        # 요청 성공이 아니거나 결과가 비어 있으면 수집을 끝낸다.
+        if result != "SUCCESS":
+            print(f"{page}페이지에서 서버 result={result!r}, 수집 종료")
+            break
+
+        if not nursery_list:
+            print(f"{page}페이지 nurseryList 비어 있음, 수집 종료")
+            break
+
+        rows.extend(nursery_list)
+        print(f"{page}페이지 수집 완료: {len(nursery_list)}건 (누적 {len(rows)}건)")
+
+    return pd.DataFrame(rows)
+
 try:
     # 일부 엔드포인트는 세션/쿠키가 없으면 런타임 오류를 반환한다.
     warmup = session.get(home_url, headers={"User-Agent": headers["User-Agent"]}, timeout=(10, 30))
     warmup.raise_for_status()
     print(f"워밍업 성공: {warmup.status_code}, 쿠키 수: {len(session.cookies)}")
 
-    # 연결/응답 타임아웃을 분리해서 무한 대기 방지
-    response = session.post(url, data=payload, headers=headers, timeout=(10, 30))
-    response.raise_for_status()
+    df = collect_nursery_list(start_page=1)
+    if df.empty:
+        print("수집된 nurseryList 데이터가 없습니다.")
+    else:
+        out_dir = Path("output")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "nursery_list.csv"
+        df.to_csv(out_path, index=False, encoding="utf-8-sig")
 
-    print("성공적으로 데이터를 가져왔습니다!")
-    try:
-        print(response.json())
-    except ValueError:
-        print(response.text[:1000])
+        print("nurseryList 표 미리보기:")
+        print(df.head(10).to_string(index=False))
+        print(f"총 {len(df)}건 저장 완료: {out_path}")
 except requests.exceptions.RequestException as exc:
     print("요청 실패:", repr(exc))
     print("힌트: 서버가 TLS handshake에서 연결을 끊는 경우 VPN/회사망/방화벽 또는 서버 측 차단 가능성이 큽니다.")
